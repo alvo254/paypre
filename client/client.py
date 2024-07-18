@@ -2,7 +2,12 @@ import base64
 import json
 import logging
 import requests
+import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 
@@ -91,12 +96,12 @@ class MPesa:
 
 if __name__ == "__main__":
     config = Config(
-        consumer_key="fG0ParfkWPYRqhCPARPN40pDzxC4sQxXfGSCYYKnuRODhEXo",
-        consumer_secret="SVlF1T7luJDHpkw8Kz9Q671lpPAgWjcuC76pLdTgPdWKSg3AwYuDEvRPhEH2meNP",
-        initiator_name="testapi",
-        security_credential="RpTFNNdRgAFGjYd+Gdq0wHZYdvVgDbdYBNMetNw83tTSwOZTYEV8pmaAZxqtMxAFKCjoNJWNUIxj5o4T9lx6svj9FxjcV8M9J1E8q8dIqdSSeQYNBMPw+v3DTnPh9tYTzOQaVo2Rd6rctXwWhp9p8WSvZ3LvizGD9/8xcPJxouMTCb2O9GGmRT4aMkDryJKSm6D6pkVu/mDVOHc5cwfcjruU3kiYiuIcDKlFkMirObV6KQ5us/KU0QbqDRWuaX3oEGf/sHViuQJJImTu4hvypAe2b5IRsdbTqhF7RU6VzoO1QDOlCMRY90ZPkX7Pd57HqYhF+llinJw0AHWn6XSgjQ==",
-        shortcode="600997",
-        environment="sandbox"  # or "production"
+        consumer_key=os.getenv("CONSUMER_KEY"),
+        consumer_secret=os.getenv("CONSUMER_SECRET"),
+        initiator_name=os.getenv("INITIATOR_NAME"),
+        security_credential=os.getenv("SECURITY_CREDENTIAL"),
+        shortcode=os.getenv("SHORTCODE"),
+        environment=os.getenv("ENVIRONMENT")  #sandbox or "production"
     )
 
     service = MPesa(config)
