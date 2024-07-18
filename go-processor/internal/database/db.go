@@ -13,11 +13,13 @@ type DB struct {
 }
 
 type Transaction struct {
-	ID        int
-	Sender    string
-	Recipient string
-	Amount    float64
-	CreatedAt time.Time
+	ID                int
+	Sender            string
+	Recipient         string
+	Amount            float64
+	CheckoutRequestID string
+	Status            string
+	CreatedAt         time.Time
 }
 
 type FailedTransaction struct {
@@ -54,6 +56,8 @@ func createTablesIfNotExist(db *sql.DB) error {
 			sender VARCHAR(255) NOT NULL,
 			recipient VARCHAR(255) NOT NULL,
 			amount DECIMAL(10, 2) NOT NULL,
+			checkout_request_id VARCHAR(255),
+			status VARCHAR(50) DEFAULT 'pending',
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 
@@ -70,13 +74,17 @@ func createTablesIfNotExist(db *sql.DB) error {
 	return err
 }
 
-func (db *DB) InsertTransaction(sender, recipient string, amount float64) error {
-	_, err := db.Exec("INSERT INTO transactions (sender, recipient, amount) VALUES ($1, $2, $3)",
-		sender, recipient, amount)
+func (db *DB) InsertTransaction(sender, recipient string, amount float64, checkoutRequestID string) (int, error) {
+	var id int
+	err := db.QueryRow(`
+		INSERT INTO transactions (sender, recipient, amount, checkout_request_id, status)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`, sender, recipient, amount, checkoutRequestID, "pending").Scan(&id)
 	if err != nil {
-		return fmt.Errorf("error inserting transaction: %w", err)
+		return 0, fmt.Errorf("error inserting transaction: %w", err)
 	}
-	return nil
+	return id, nil
 }
 
 func (db *DB) InsertFailedTransaction(sender, recipient string, amount float64, errMsg string) error {
@@ -127,4 +135,16 @@ func (db *DB) UpdateFailedTransaction(id int, success bool) error {
 		}
 	}
 	return nil
+}
+
+func (db *DB) GetTransactionStatus(id int) (string, error) {
+	var status string
+	err := db.QueryRow("SELECT status FROM transactions WHERE id = $1", id).Scan(&status)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "not found", nil
+		}
+		return "", fmt.Errorf("error getting transaction status: %w", err)
+	}
+	return status, nil
 }
