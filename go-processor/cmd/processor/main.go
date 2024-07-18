@@ -5,9 +5,7 @@ import (
 	"log"
 
 	"go-processor/internal/config"
-	// Uncomment these when implemented
-	// "go-processor/internal/database"
-	// "go-processor/internal/rabbitmq"
+	"go-processor/internal/rabbitmq"
 )
 
 func main() {
@@ -20,7 +18,20 @@ func main() {
 
 	fmt.Printf("Loaded configuration: %+v\n", cfg)
 
-	// TODO: Initialize RabbitMQ connection
-	// TODO: Initialize database connection
-	// TODO: Start processing transactions
+	rmq, err := rabbitmq.NewRabbitMQ(cfg.RabbitMQURL)
+	if err != nil {
+		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
+	}
+	defer rmq.Close()
+
+	err = rmq.ConsumeMessages(processMessage)
+	if err != nil {
+		log.Fatalf("Failed to consume messages: %v", err)
+	}
+}
+
+func processMessage(body []byte) error {
+	// TODO: Implement actual message processing
+	fmt.Printf("Processing message: %s\n", string(body))
+	return nil
 }
