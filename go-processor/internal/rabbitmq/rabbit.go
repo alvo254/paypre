@@ -10,7 +10,6 @@ import (
 type RabbitMQ struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel
-	queue   amqp.Queue
 }
 
 func NewRabbitMQ(url string) (*RabbitMQ, error) {
@@ -24,7 +23,7 @@ func NewRabbitMQ(url string) (*RabbitMQ, error) {
 		return nil, fmt.Errorf("failed to open a channel: %w", err)
 	}
 
-	q, err := ch.QueueDeclare(
+	_, err = ch.QueueDeclare(
 		"transactions", // name
 		false,          // durable
 		false,          // delete when unused
@@ -39,7 +38,6 @@ func NewRabbitMQ(url string) (*RabbitMQ, error) {
 	return &RabbitMQ{
 		conn:    conn,
 		channel: ch,
-		queue:   q,
 	}, nil
 }
 
@@ -54,13 +52,13 @@ func (r *RabbitMQ) Close() {
 
 func (r *RabbitMQ) ConsumeMessages(processor func([]byte) error) error {
 	msgs, err := r.channel.Consume(
-		r.queue.Name, // queue
-		"",           // consumer
-		true,         // auto-ack
-		false,        // exclusive
-		false,        // no-local
-		false,        // no-wait
-		nil,          // args
+		"transactions", // queue
+		"",             // consumer
+		true,           // auto-ack
+		false,          // exclusive
+		false,          // no-local
+		false,          // no-wait
+		nil,            // args
 	)
 	if err != nil {
 		return fmt.Errorf("failed to register a consumer: %w", err)
