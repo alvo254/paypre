@@ -7,8 +7,8 @@ channel = connection.channel()
 channel.queue_declare(queue='transactions')
 
 message = {
-    "sender": "Alice",
-    "recipient": "Bob",
+    "sender": "254712345678",
+    "recipient": "254787654321",
     "amount": 100.50
 }
 
