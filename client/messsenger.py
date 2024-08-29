@@ -4,7 +4,7 @@ import json
 message = {
     "sender": "254708374149",
     "recipient": "254708374149",
-    "amount": 10.0
+    "amount": 1500.0
 }
 
 connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))

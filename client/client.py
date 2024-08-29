@@ -1,116 +1,88 @@
-import base64
+from flask import Flask, request, jsonify
+import pika
+import psycopg2
 import json
-import logging
-import requests
-import os
-from datetime import datetime
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+app = Flask(__name__)
 
-logging.basicConfig(level=logging.INFO)
+# RabbitMQ setup
+rabbitmq_url = 'amqp://guest:guest@localhost:5672/'
+try:
+    connection = pika.BlockingConnection(pika.URLParameters(rabbitmq_url))
+    channel = connection.channel()
+    channel.queue_declare(queue='transactions', durable=True)
+except Exception as e:
+    print(f"Failed to connect to RabbitMQ: {e}")
+    connection = None
 
-class Config:
-    def __init__(self, consumer_key, consumer_secret, initiator_name, security_credential, shortcode, environment):
-        self.consumer_key = consumer_key
-        self.consumer_secret = consumer_secret
-        self.initiator_name = initiator_name
-        self.security_credential = security_credential
-        self.shortcode = shortcode
-        self.environment = environment
+# Database setup
+try:
+    conn = psycopg2.connect("dbname=rabbitmq user=alvo password=alvo254 host=localhost port=5432")
+    cursor = conn.cursor()
+except Exception as e:
+    print(f"Failed to connect to PostgreSQL: {e}")
+    conn = None
 
-class MPesa:
-    def __init__(self, config):
-        self.config = config
+@app.route('/b2c/queue', methods=['POST'])
+def queue_timeout():
+    data = request.get_json()
+    print("Queue Timeout:", data)
+    
+    # Update RabbitMQ
+    if connection:
+        try:
+            channel.basic_publish(
+                exchange='',
+                routing_key='transactions',
+                body=json.dumps(data),
+                properties=pika.BasicProperties(
+                    delivery_mode=2,  # make message persistent
+                ))
+        except Exception as e:
+            print(f"Failed to publish message to RabbitMQ: {e}")
+    
+    return jsonify({"status": "success"}), 200
 
-    def get_api_base_url(self):
-        if self.config.environment == "production":
-            return "https://api.safaricom.co.ke"
-        return "https://sandbox.safaricom.co.ke"
+@app.route('/b2c/result', methods=['POST'])
+def result():
+    data = request.get_json()
+    print("Result:", data)
+    
+    sender = data.get('Sender')
+    recipient = data.get('Recipient')
+    amount = data.get('Amount')
+    checkout_request_id = data.get('CheckoutRequestID')
+    response_description = data.get('ResponseDescription')
+    
+    if not all([sender, recipient, amount, checkout_request_id, response_description]):
+        return jsonify({"status": "failure", "reason": "Invalid data"}), 400
 
-    def get_access_token(self):
-        url = f"{self.get_api_base_url()}/oauth/v1/generate?grant_type=client_credentials"
-        logging.info(f"Requesting access token from URL: {url}")
-        
-        response = requests.get(
-            url,
-            headers={
-                "Authorization": "Basic " + base64.b64encode(f"{self.config.consumer_key}:{self.config.consumer_secret}".encode()).decode()
-            }
-        )
+    # Update PostgreSQL
+    if conn:
+        try:
+            cursor.execute("""
+                INSERT INTO transactions (sender, recipient, amount, created_at, checkout_request_id, status) 
+                VALUES (%s, %s, %s, NOW(), %s, %s)
+            """, (sender, recipient, amount, checkout_request_id, response_description))
+            conn.commit()
+        except Exception as e:
+            print(f"Failed to insert record into PostgreSQL: {e}")
+            return jsonify({"status": "failure", "reason": "Database error"}), 500
+    
+    # Update RabbitMQ
+    if connection:
+        try:
+            channel.basic_publish(
+                exchange='',
+                routing_key='transactions',
+                body=json.dumps(data),
+                properties=pika.BasicProperties(
+                    delivery_mode=2,  # make message persistent
+                ))
+        except Exception as e:
+            print(f"Failed to publish message to RabbitMQ: {e}")
+    
+    return jsonify({"status": "success"}), 200
 
-        logging.info(f"Response status code: {response.status_code}")
-        logging.info(f"Response headers: {response.headers}")
-        logging.info(f"Response text: {response.text}")
-
-        if response.status_code != 200:
-            logging.error(f"Failed to get access token: {response.text}")
-            raise Exception("Failed to get access token")
-
-        access_token = response.json().get("access_token")
-        if not access_token:
-            raise Exception("No access token in response")
-        
-        logging.info(f"Got access token: {access_token[:10]}")  # Log first 10 characters of token for security
-        return access_token
-
-    def initiate_b2c_payment(self, phone_number, amount, command_id="SalaryPayment", remarks="Test remarks", occasion=""):
-        url = f"{self.get_api_base_url()}/mpesa/b2c/v1/paymentrequest"
-        originator_conversation_id = "f02a760b-d233-45b6-9dc3-f41b49028299"
-
-        request_body = {
-            "InitiatorName": self.config.initiator_name,
-            "SecurityCredential": self.config.security_credential,
-            "CommandID": command_id,
-            "Amount": str(amount),
-            "PartyA": self.config.shortcode,
-            "PartyB": phone_number,
-            "Remarks": remarks,
-            "QueueTimeOutURL": "https://5c19-102-216-154-4.ngrok-free.app/b2c/queue",
-            "ResultURL": "https://5c19-102-216-154-4.ngrok-free.app/b2c/result",
-            "Occasion": occasion,
-            "OriginatorConversationID": originator_conversation_id
-        }
-
-        logging.info(f"M-Pesa B2C request body: {json.dumps(request_body)}")
-        
-        token = self.get_access_token()
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(url, headers=headers, data=json.dumps(request_body))
-        if response.status_code != 200:
-            logging.error(f"Failed to initiate M-Pesa B2C transaction: {response.text}")
-            raise Exception("Failed to initiate M-Pesa B2C transaction")
-        
-        response_data = response.json()
-        logging.info(f"M-Pesa B2C API response: {json.dumps(response_data)}")
-
-        if response_data.get("ResponseCode") != "0":
-            raise Exception(f"M-Pesa B2C transaction failed: {response_data.get('ResponseDescription')}")
-        
-        return response_data.get("ConversationID")
-
-if __name__ == "__main__":
-    config = Config(
-        consumer_key=os.getenv("CONSUMER_KEY"),
-        consumer_secret=os.getenv("CONSUMER_SECRET"),
-        initiator_name=os.getenv("INITIATOR_NAME"),
-        security_credential=os.getenv("SECURITY_CREDENTIAL"),
-        shortcode=os.getenv("SHORTCODE"),
-        environment=os.getenv("ENVIRONMENT")  #sandbox or "production"
-    )
-
-    service = MPesa(config)
-
-    phone_number = "254708374149"
-    amount = 10
-
-    try:
-        conversation_id = service.initiate_b2c_payment(phone_number, amount)
-        print(f"B2C Payment initiated successfully. ConversationID: {conversation_id}")
-    except Exception as e:
-        logging.error(f"Error initiating B2C Payment: {e}")
+if __name__ == '__main__':
+    app.run(port=5000)
