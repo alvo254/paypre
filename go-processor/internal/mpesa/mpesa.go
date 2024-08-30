@@ -1,7 +1,7 @@
 package mpesa
 
 import (
-	"bytes" // Add this import
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -89,14 +89,4 @@ func (m *MPesa) InitiateSTKPush(phoneNumber string, amount int) (*STKPushRespons
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody)) // Use bytes.NewBuffer
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var response STKPushResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, err
-	}
-	return &response, nil
-}
+	resp, err := m

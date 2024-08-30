@@ -83,6 +83,16 @@ func processMessage(db *database.DB, mpesaService *mpesa.MPesa, body []byte) err
 		return fmt.Errorf("failed to initiate M-Pesa transaction: %w", err)
 	}
 
+	// Ensure the response contains a CheckoutRequestID
+	if response.CheckoutRequestID == "" {
+		log.Printf("No CheckoutRequestID in M-Pesa response: %+v", response)
+		errInsert := db.InsertFailedTransaction(msg.Sender, msg.Recipient, msg.Amount, "No CheckoutRequestID in response")
+		if errInsert != nil {
+			log.Printf("Failed to insert failed transaction: %v", errInsert)
+		}
+		return fmt.Errorf("No CheckoutRequestID in M-Pesa response")
+	}
+
 	// Enhanced logging of the response
 	log.Printf("M-Pesa transaction initiated successfully. Response: %+v", response)
 
